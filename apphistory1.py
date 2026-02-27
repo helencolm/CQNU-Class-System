@@ -4,11 +4,11 @@ import pandas as pd
 import datetime
 import random
 from streamlit_autorefresh import st_autorefresh
+from streamlit_cookies_controller import CookieController
 
 # ==========================================
 # 1. 核心配置与数据库初始化
 # ==========================================
-# 【修复1】更换数据库名称，抛弃旧的冲突数据，建立全新 6 列数据库
 DB_FILE = 'classroom_v2.db' 
 ROWS = 9     
 COLS = 10    
@@ -102,49 +102,69 @@ current_pin = get_setting('current_pin')
 is_open = get_setting('class_open') == 'True'
 
 if view_mode == "screen":
-    # ------------------ 大屏端（完美还原 2-6-2 布局 + 互动区） ------------------
+    # ------------------ 大屏端（热力图升级版） ------------------
     st_autorefresh(interval=3000, limit=None, key="screen_refresh")
     
-    # 【修复2】恢复大屏幕的左右 3:1 分栏结构
     col_main, col_side = st.columns([3, 1])
     
     with col_main:
-        st.markdown("<h1 style='text-align: center;'>🎯 课堂座位实时看板</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>🎯 课堂座位实时热力图</h1>", unsafe_allow_html=True)
         if is_open:
             st.markdown(f"<h3 style='text-align: center; color: #D32F2F;'>今日签到口令：【 {current_pin} 】</h3>", unsafe_allow_html=True)
         else:
             st.markdown("<h3 style='text-align: center; color: gray;'>🚫 签到通道已关闭</h3>", unsafe_allow_html=True)
         st.markdown("---")
         
+        # 获取座位和加分数据
         conn = sqlite3.connect(DB_FILE)
         seats_df = pd.read_sql_query("SELECT * FROM seats", conn)
+        logs_df = pd.read_sql_query("SELECT student_id, SUM(points) as bonus_pts FROM logs WHERE action LIKE '%答题%' GROUP BY student_id", conn)
         conn.close()
-        taken_seats = {(row['row'], row['col']): row['student_name'] for _, row in seats_df.iterrows()}
         
-        # 渲染 2-6-2 布局
+        # 将答题分映射到字典 {stu_id: bonus_pts}
+        bonus_dict = dict(zip(logs_df['student_id'], logs_df['bonus_pts']))
+        # 将座位映射到字典 {(row, col): row_data}
+        taken_seats = {(row['row'], row['col']): row for _, row in seats_df.iterrows()}
+        
+        # 渲染 2-6-2 布局并应用热力图颜色
         for r in range(1, ROWS + 1):
             cols_layout = st.columns([1, 1, 0.4, 1, 1, 1, 1, 1, 1, 0.4, 1, 1])
             seat_col_indices = [0, 1, 3, 4, 5, 6, 7, 8, 10, 11]
             
             for c in range(1, COLS + 1):
                 ui_col_index = seat_col_indices[c-1]
-                seat_status = taken_seats.get((r, c), "空座")
                 
-                if seat_status != "空座":
-                    bg_color = "#1E88E5" if r > VIP_ROWS else "#4CAF50" 
-                    text = f"🧑‍🎓 {seat_status}"
-                elif r <= VIP_ROWS:
-                    bg_color = "#FDD835" 
-                    text = f"⭐ {r}-{c}"
+                if (r, c) in taken_seats:
+                    seat_data = taken_seats[(r, c)]
+                    stu_id = seat_data['student_id']
+                    stu_name = seat_data['student_name']
+                    
+                    # 计算此座位的总分
+                    base_pts = 2 if r <= VIP_ROWS else 1
+                    bonus = bonus_dict.get(stu_id, 0)
+                    total_pts = base_pts + bonus
+                    
+                    # 座位热力图颜色进阶逻辑
+                    if bonus >= 4:
+                        bg_color = "#D81B60" # 火红：高频互动
+                        text = f"🔥 {stu_name}<br>({total_pts}分)"
+                    elif bonus > 0:
+                        bg_color = "#FF9800" # 橙色：开始互动
+                        text = f"🌟 {stu_name}<br>({total_pts}分)"
+                    elif r <= VIP_ROWS:
+                        bg_color = "#FDD835" # 金色：仅抢占VIP
+                        text = f"⭐ {stu_name}<br>({total_pts}分)"
+                    else:
+                        bg_color = "#4CAF50" # 绿色：普通入座
+                        text = f"🧑‍🎓 {stu_name}<br>({total_pts}分)"
                 else:
-                    bg_color = "#E0E0E0" 
+                    bg_color = "#E0E0E0" # 灰色：空座
                     text = f"{r}-{c}"
                 
                 html = f"""<div style="background-color: {bg_color}; padding: 8px 2px; border-radius: 5px; 
                             text-align: center; margin-bottom: 8px; font-weight: bold; color: #333; font-size: 13px;">{text}</div>"""
                 cols_layout[ui_col_index].markdown(html, unsafe_allow_html=True)
 
-    # 恢复大屏幕右侧的实时加分榜
     with col_side:
         st.header("📢 实时加分榜")
         conn = sqlite3.connect(DB_FILE)
@@ -202,8 +222,11 @@ elif view_mode == "admin":
             st.rerun()
 
 else:
-    # ------------------ 学生端（手机扫码） ------------------
+    # ------------------ 学生端（强制Cookie记忆） ------------------
     st.title("🚀 课堂签到与加分系统")
+    
+    # 初始化 Cookie 控制器
+    controller = CookieController()
     
     if not is_open:
         st.error("🛑 老师已关闭目前的签到/加分通道。")
@@ -212,13 +235,23 @@ else:
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
 
+    # 第一优先级：尝试从底层 Cookie 读取记忆
+    saved_id = controller.get('stu_id')
+    saved_name = controller.get('stu_name')
+    saved_class = controller.get('class_name')
+    
+    if saved_id and saved_name and not st.session_state.logged_in:
+        st.session_state.class_name = saved_class
+        st.session_state.stu_id = saved_id
+        st.session_state.stu_name = saved_name
+        st.session_state.logged_in = True
+
     if not st.session_state.logged_in:
-        # 【优化】开启 clear_on_submit=False 让浏览器更容易记住表单内容
         with st.form("login_form", clear_on_submit=False):
             st.write("### 身份认证")
             class_name = st.selectbox("学科与班级", CLASSES)
-            stu_id = st.text_input("学号 (浏览器会自动记忆)")
-            stu_name = st.text_input("姓名 (浏览器会自动记忆)")
+            stu_id = st.text_input("学号")
+            stu_name = st.text_input("姓名")
             pin_input = st.text_input("大屏幕【4位口令】")
             submitted = st.form_submit_button("进入系统")
             
@@ -228,13 +261,18 @@ else:
                 elif not stu_id or not stu_name:
                     st.error("❌ 请填写完整的学号和姓名。")
                 else:
+                    # 验证通过，强制写入 Cookie
+                    controller.set('stu_id', stu_id)
+                    controller.set('stu_name', stu_name)
+                    controller.set('class_name', class_name)
+                    
                     st.session_state.class_name = class_name
                     st.session_state.stu_id = stu_id
                     st.session_state.stu_name = stu_name
                     st.session_state.logged_in = True
                     st.rerun()
     else:
-        st.success(f"你好，{st.session_state.stu_name} ({st.session_state.class_name})")
+        st.success(f"你好，{st.session_state.stu_name} ({st.session_state.class_name}) - 身份已自动保存")
         tab1, tab2 = st.tabs(["🪑 抢占座位", "🙋 答题加分"])
         
         with tab1:
@@ -271,10 +309,10 @@ else:
                     st.warning("教室已满座啦！")
 
         with tab2:
-            st.markdown("回答问题后，点击下方按钮自助加分。")
+            st.markdown("回答问题后，点击下方按钮自助加分，座位会立刻变色升温！")
             if st.button("🙋 我刚回答了问题，加 2 分！", use_container_width=True):
                 add_bonus_points(st.session_state.stu_id, st.session_state.stu_name, st.session_state.class_name)
-                st.success("✅ 加分成功！积分已上墙。")
+                st.success("✅ 加分成功！请看大屏幕你的座位变化。")
                 
         # ------------------ 手机端：颜色编码日志看板 ------------------
         st.markdown("---")
