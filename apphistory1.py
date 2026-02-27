@@ -15,6 +15,9 @@ VIP_ROWS = 3
 TEACHER_PWD = "admin" 
 CLASSES = ["25历史学1班", "25历史学2班", "25音乐学2班", "其他"]
 
+# 强制设置北京时间 (UTC+8)
+BJ_TZ = datetime.timezone(datetime.timedelta(hours=8))
+
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -67,7 +70,8 @@ def take_seat(row, col, stu_id, stu_name, class_name):
     c = conn.cursor()
     c.execute("SELECT student_id FROM seats WHERE row=? AND col=?", (row, col))
     if c.fetchone() is None:
-        time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 使用北京时间
+        time_str = datetime.datetime.now(BJ_TZ).strftime("%Y-%m-%d %H:%M:%S")
         c.execute("INSERT INTO seats VALUES (?, ?, ?, ?, ?, ?)", 
                   (row, col, stu_id, stu_name, class_name, time_str))
         
@@ -84,7 +88,8 @@ def take_seat(row, col, stu_id, stu_name, class_name):
 def add_bonus_points(stu_id, stu_name, class_name):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 使用北京时间
+    time_str = datetime.datetime.now(BJ_TZ).strftime("%Y-%m-%d %H:%M:%S")
     c.execute("INSERT INTO logs VALUES (?, ?, ?, ?, ?, ?)", 
               (time_str, stu_id, stu_name, class_name, "课堂主动答题", 2))
     conn.commit()
@@ -151,12 +156,12 @@ if view_mode == "screen":
                         bg_color = "#4CAF50" # 绿色
                         text = f"🧑‍🎓 {stu_name}<br>({total_pts}分)"
                 else:
-                    # 空座位逻辑：前三排默认金色，其余灰色
+                    # 空座位逻辑：前三排默认浅金色
                     if r <= VIP_ROWS:
-                        bg_color = "#FFF59D" # 浅金色背景，提示VIP区
+                        bg_color = "#FFF59D" 
                         text = f"⭐ {r}-{c}"
                     else:
-                        bg_color = "#E0E0E0" # 灰色
+                        bg_color = "#E0E0E0" 
                         text = f"{r}-{c}"
                 
                 html = f"""<div style="background-color: {bg_color}; padding: 8px 2px; border-radius: 5px; 
@@ -171,10 +176,10 @@ if view_mode == "screen":
         
         if not logs_df.empty:
             for _, row in logs_df.iterrows():
+                # 只取时间部分显示
                 time_only = row['timestamp'].split(" ")[1]
                 action = row['action']
                 
-                # 大屏彩色日志卡片设计
                 if "答题" in action:
                     border_color = "#D81B60"
                     icon = "🔥"
@@ -223,12 +228,22 @@ elif view_mode == "admin":
         st.subheader("2. 数据导出与重置 (下课必点！)")
         conn = sqlite3.connect(DB_FILE)
         all_logs_df = pd.read_sql_query("SELECT * FROM logs", conn)
+        
+        # 智能提取班级名用于文件命名
+        c = conn.cursor()
+        c.execute("SELECT class_name FROM seats ORDER BY timestamp ASC LIMIT 1")
+        first_class_res = c.fetchone()
+        class_label = first_class_res[0] if first_class_res else "未签到班级"
         conn.close()
+        
+        # 使用北京时间生成当前日期
+        current_date = datetime.datetime.now(BJ_TZ).strftime('%Y%m%d')
+        export_filename = f"class_logs_{current_date}_{class_label}.csv"
         
         st.download_button(
             label="📊 下载今日完整数据日志 (CSV)",
             data=all_logs_df.to_csv(index=False).encode('utf-8-sig'),
-            file_name=f"class_logs_{datetime.datetime.now().strftime('%Y%m%d')}.csv",
+            file_name=export_filename,
             mime="text/csv",
             use_container_width=True
         )
@@ -240,7 +255,7 @@ elif view_mode == "admin":
             st.rerun()
 
 else:
-    # ------------------ 学生端（回归极简登录） ------------------
+    # ------------------ 学生端 ------------------
     st.title("🚀 课堂签到与加分系统")
     
     if not is_open:
@@ -326,7 +341,6 @@ else:
             time_only = row['timestamp'].split(" ")[1]
             action = row['action']
             
-            # 去掉了班级后缀，保留姓名和彩色行为
             if "答题" in action:
                 display_text = f"🔥 <span style='color: #D81B60; font-weight: bold;'>{row['student_name']} {action} (+{row['points']})</span>"
             elif "VIP" in action:
