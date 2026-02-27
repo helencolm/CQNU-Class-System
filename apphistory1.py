@@ -15,7 +15,6 @@ VIP_ROWS = 3
 TEACHER_PWD = "admin" 
 CLASSES = ["25历史学1班", "25历史学2班", "25音乐学2班", "其他"]
 
-# 强制设置北京时间 (UTC+8)
 BJ_TZ = datetime.timezone(datetime.timedelta(hours=8))
 
 def init_db():
@@ -70,7 +69,6 @@ def take_seat(row, col, stu_id, stu_name, class_name):
     c = conn.cursor()
     c.execute("SELECT student_id FROM seats WHERE row=? AND col=?", (row, col))
     if c.fetchone() is None:
-        # 使用北京时间
         time_str = datetime.datetime.now(BJ_TZ).strftime("%Y-%m-%d %H:%M:%S")
         c.execute("INSERT INTO seats VALUES (?, ?, ?, ?, ?, ?)", 
                   (row, col, stu_id, stu_name, class_name, time_str))
@@ -88,7 +86,6 @@ def take_seat(row, col, stu_id, stu_name, class_name):
 def add_bonus_points(stu_id, stu_name, class_name):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    # 使用北京时间
     time_str = datetime.datetime.now(BJ_TZ).strftime("%Y-%m-%d %H:%M:%S")
     c.execute("INSERT INTO logs VALUES (?, ?, ?, ?, ?, ?)", 
               (time_str, stu_id, stu_name, class_name, "课堂主动答题", 2))
@@ -109,7 +106,7 @@ if view_mode == "screen":
     # ------------------ 大屏端 ------------------
     st_autorefresh(interval=3000, limit=None, key="screen_refresh")
     
-    col_main, col_side = st.columns([3, 1])
+    col_main, col_side = st.columns([3, 1.2]) # 稍微加宽一点右侧，给榜单留空间
     
     with col_main:
         st.markdown("<h1 style='text-align: center;'>🎯 课堂座位实时热力图</h1>", unsafe_allow_html=True)
@@ -144,19 +141,18 @@ if view_mode == "screen":
                     total_pts = base_pts + bonus
                     
                     if bonus >= 4:
-                        bg_color = "#D81B60" # 火红
+                        bg_color = "#D81B60" 
                         text = f"🔥 {stu_name}<br>({total_pts}分)"
                     elif bonus > 0:
-                        bg_color = "#FF9800" # 橙色
+                        bg_color = "#FF9800" 
                         text = f"🌟 {stu_name}<br>({total_pts}分)"
                     elif r <= VIP_ROWS:
-                        bg_color = "#FBC02D" # 稍深的金色，增加白字可读性
+                        bg_color = "#FBC02D" 
                         text = f"⭐ {stu_name}<br>({total_pts}分)"
                     else:
-                        bg_color = "#4CAF50" # 绿色
+                        bg_color = "#4CAF50" 
                         text = f"🧑‍🎓 {stu_name}<br>({total_pts}分)"
                 else:
-                    # 空座位逻辑：前三排默认浅金色
                     if r <= VIP_ROWS:
                         bg_color = "#FFF59D" 
                         text = f"⭐ {r}-{c}"
@@ -169,14 +165,52 @@ if view_mode == "screen":
                 cols_layout[ui_col_index].markdown(html, unsafe_allow_html=True)
 
     with col_side:
-        st.header("📢 实时加分榜")
+        # ---- 上半部分：封神榜 ----
+        st.header("🏆 课堂封神榜")
         conn = sqlite3.connect(DB_FILE)
-        logs_df = pd.read_sql_query("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 12", conn)
+        # 计算每个人的总分进行排名
+        leaderboard_df = pd.read_sql_query("""
+            SELECT student_name, SUM(points) as total_pts 
+            FROM logs 
+            GROUP BY student_name 
+            ORDER BY total_pts DESC 
+            LIMIT 5
+        """, conn)
+        
+        if not leaderboard_df.empty:
+            for i, row in leaderboard_df.iterrows():
+                rank = i + 1
+                if rank == 1:
+                    title = "👑 榜一大哥"
+                    color = "#D32F2F"
+                elif rank == 2:
+                    title = "🥈 榜二护法"
+                    color = "#E64A19"
+                elif rank == 3:
+                    title = "🥉 榜三先锋"
+                    color = "#F57C00"
+                else:
+                    title = f"🏅 第 {rank} 名"
+                    color = "#388E3C"
+                
+                st.markdown(f"""
+                <div style='background-color: #fff; border: 2px solid {color}; border-radius: 8px; padding: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;'>
+                    <span style='font-size: 16px; font-weight: bold; color: {color};'>{title}</span>
+                    <span style='font-size: 18px; font-weight: bold;'>{row['student_name']} <span style='color: #D81B60;'>{row['total_pts']}分</span></span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.write("目前榜单为空，速来打榜！")
+
+        st.markdown("---")
+        
+        # ---- 下半部分：实时动态 ----
+        st.subheader("📢 实时动态")
+        logs_df = pd.read_sql_query("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 6", conn)
         conn.close()
         
         if not logs_df.empty:
             for _, row in logs_df.iterrows():
-                # 只取时间部分显示
                 time_only = row['timestamp'].split(" ")[1]
                 action = row['action']
                 
@@ -191,14 +225,12 @@ if view_mode == "screen":
                     icon = "🧑‍🎓"
                     
                 html_log = f"""
-                <div style='margin-bottom: 10px; padding: 10px; border-radius: 5px; background-color: #f8f9fa; border-left: 6px solid {border_color}; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);'>
-                    <div style='font-size: 14px; font-weight: bold; color: #333;'>{icon} [{time_only}] {row['student_name']}</div>
-                    <div style='font-size: 14px; color: {border_color}; margin-top: 4px; font-weight: bold;'>{action} (+{row['points']})</div>
+                <div style='margin-bottom: 8px; padding: 8px; border-radius: 5px; background-color: #f8f9fa; border-left: 5px solid {border_color};'>
+                    <div style='font-size: 13px; font-weight: bold; color: #333;'>{icon} [{time_only}] {row['student_name']}</div>
+                    <div style='font-size: 13px; color: {border_color}; margin-top: 2px;'>{action} (+{row['points']})</div>
                 </div>
                 """
                 st.markdown(html_log, unsafe_allow_html=True)
-        else:
-            st.write("坐等第一位发言的同学...")
 
 elif view_mode == "admin":
     # ------------------ 教师隐藏后台 ------------------
@@ -229,14 +261,12 @@ elif view_mode == "admin":
         conn = sqlite3.connect(DB_FILE)
         all_logs_df = pd.read_sql_query("SELECT * FROM logs", conn)
         
-        # 智能提取班级名用于文件命名
         c = conn.cursor()
         c.execute("SELECT class_name FROM seats ORDER BY timestamp ASC LIMIT 1")
         first_class_res = c.fetchone()
         class_label = first_class_res[0] if first_class_res else "未签到班级"
         conn.close()
         
-        # 使用北京时间生成当前日期
         current_date = datetime.datetime.now(BJ_TZ).strftime('%Y%m%d')
         export_filename = f"class_logs_{current_date}_{class_label}.csv"
         
@@ -287,7 +317,9 @@ else:
                     st.rerun()
     else:
         st.success(f"你好，{st.session_state.stu_name}")
-        tab1, tab2 = st.tabs(["🪑 抢占座位", "🙋 答题加分"])
+        
+        # 新增了第三个 Tab：榜一大哥
+        tab1, tab2, tab3 = st.tabs(["🪑 抢占座位", "🙋 答题加分", "🏆 榜一大哥"])
         
         with tab1:
             conn = sqlite3.connect(DB_FILE)
@@ -326,15 +358,43 @@ else:
             st.markdown("回答问题后，点击下方按钮自助加分，座位会立刻变色升温！")
             if st.button("🙋 我刚回答了问题，加 2 分！", use_container_width=True):
                 add_bonus_points(st.session_state.stu_id, st.session_state.stu_name, st.session_state.class_name)
-                st.success("✅ 加分成功！请看大屏幕你的座位变化。")
+                st.success("✅ 加分成功！速去【排行榜】页面查看你的排名。")
+                
+        with tab3:
+            st.subheader("🔥 谁是今天的榜一？")
+            st_autorefresh(interval=5000, limit=None, key="leaderboard_refresh")
+            
+            conn = sqlite3.connect(DB_FILE)
+            leaderboard_df = pd.read_sql_query("""
+                SELECT student_name, SUM(points) as total_pts 
+                FROM logs 
+                GROUP BY student_name 
+                ORDER BY total_pts DESC 
+                LIMIT 10
+            """, conn)
+            conn.close()
+            
+            if not leaderboard_df.empty:
+                for i, row in leaderboard_df.iterrows():
+                    rank = i + 1
+                    if rank == 1:
+                        st.markdown(f"### 👑 榜一：{row['student_name']} ({row['total_pts']}分)")
+                        st.progress(min(row['total_pts'] / 10, 1.0)) # 趣味进度条
+                    elif rank == 2:
+                        st.markdown(f"#### 🥈 榜二：{row['student_name']} ({row['total_pts']}分)")
+                    elif rank == 3:
+                        st.markdown(f"#### 🥉 榜三：{row['student_name']} ({row['total_pts']}分)")
+                    else:
+                        st.markdown(f"**🏅 第 {rank} 名：** {row['student_name']} ({row['total_pts']}分)")
+            else:
+                st.info("榜单虚位以待，快去抢座和答题吧！")
                 
         # ------------------ 手机端：颜色编码日志看板 ------------------
         st.markdown("---")
-        st.subheader("📊 课堂实时动态")
-        st_autorefresh(interval=5000, limit=None, key="student_refresh")
+        st.subheader("📢 最新动态")
         
         conn = sqlite3.connect(DB_FILE)
-        logs_df = pd.read_sql_query("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 8", conn)
+        logs_df = pd.read_sql_query("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 6", conn)
         conn.close()
         
         for _, row in logs_df.iterrows():
