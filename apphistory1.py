@@ -4,7 +4,6 @@ import pandas as pd
 import datetime
 import random
 from streamlit_autorefresh import st_autorefresh
-from streamlit_cookies_controller import CookieController
 
 # ==========================================
 # 1. 核心配置与数据库初始化
@@ -102,7 +101,7 @@ current_pin = get_setting('current_pin')
 is_open = get_setting('class_open') == 'True'
 
 if view_mode == "screen":
-    # ------------------ 大屏端（热力图升级版） ------------------
+    # ------------------ 大屏端 ------------------
     st_autorefresh(interval=3000, limit=None, key="screen_refresh")
     
     col_main, col_side = st.columns([3, 1])
@@ -115,18 +114,14 @@ if view_mode == "screen":
             st.markdown("<h3 style='text-align: center; color: gray;'>🚫 签到通道已关闭</h3>", unsafe_allow_html=True)
         st.markdown("---")
         
-        # 获取座位和加分数据
         conn = sqlite3.connect(DB_FILE)
         seats_df = pd.read_sql_query("SELECT * FROM seats", conn)
         logs_df = pd.read_sql_query("SELECT student_id, SUM(points) as bonus_pts FROM logs WHERE action LIKE '%答题%' GROUP BY student_id", conn)
         conn.close()
         
-        # 将答题分映射到字典 {stu_id: bonus_pts}
         bonus_dict = dict(zip(logs_df['student_id'], logs_df['bonus_pts']))
-        # 将座位映射到字典 {(row, col): row_data}
         taken_seats = {(row['row'], row['col']): row for _, row in seats_df.iterrows()}
         
-        # 渲染 2-6-2 布局并应用热力图颜色
         for r in range(1, ROWS + 1):
             cols_layout = st.columns([1, 1, 0.4, 1, 1, 1, 1, 1, 1, 0.4, 1, 1])
             seat_col_indices = [0, 1, 3, 4, 5, 6, 7, 8, 10, 11]
@@ -136,30 +131,33 @@ if view_mode == "screen":
                 
                 if (r, c) in taken_seats:
                     seat_data = taken_seats[(r, c)]
-                    stu_id = seat_data['student_id']
                     stu_name = seat_data['student_name']
+                    stu_id = seat_data['student_id']
                     
-                    # 计算此座位的总分
                     base_pts = 2 if r <= VIP_ROWS else 1
                     bonus = bonus_dict.get(stu_id, 0)
                     total_pts = base_pts + bonus
                     
-                    # 座位热力图颜色进阶逻辑
                     if bonus >= 4:
-                        bg_color = "#D81B60" # 火红：高频互动
+                        bg_color = "#D81B60" # 火红
                         text = f"🔥 {stu_name}<br>({total_pts}分)"
                     elif bonus > 0:
-                        bg_color = "#FF9800" # 橙色：开始互动
+                        bg_color = "#FF9800" # 橙色
                         text = f"🌟 {stu_name}<br>({total_pts}分)"
                     elif r <= VIP_ROWS:
-                        bg_color = "#FDD835" # 金色：仅抢占VIP
+                        bg_color = "#FBC02D" # 稍深的金色，增加白字可读性
                         text = f"⭐ {stu_name}<br>({total_pts}分)"
                     else:
-                        bg_color = "#4CAF50" # 绿色：普通入座
+                        bg_color = "#4CAF50" # 绿色
                         text = f"🧑‍🎓 {stu_name}<br>({total_pts}分)"
                 else:
-                    bg_color = "#E0E0E0" # 灰色：空座
-                    text = f"{r}-{c}"
+                    # 空座位逻辑：前三排默认金色，其余灰色
+                    if r <= VIP_ROWS:
+                        bg_color = "#FFF59D" # 浅金色背景，提示VIP区
+                        text = f"⭐ {r}-{c}"
+                    else:
+                        bg_color = "#E0E0E0" # 灰色
+                        text = f"{r}-{c}"
                 
                 html = f"""<div style="background-color: {bg_color}; padding: 8px 2px; border-radius: 5px; 
                             text-align: center; margin-bottom: 8px; font-weight: bold; color: #333; font-size: 13px;">{text}</div>"""
@@ -168,12 +166,32 @@ if view_mode == "screen":
     with col_side:
         st.header("📢 实时加分榜")
         conn = sqlite3.connect(DB_FILE)
-        logs_df = pd.read_sql_query("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 15", conn)
+        logs_df = pd.read_sql_query("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 12", conn)
         conn.close()
+        
         if not logs_df.empty:
             for _, row in logs_df.iterrows():
                 time_only = row['timestamp'].split(" ")[1]
-                st.info(f"[{time_only}] **{row['student_name']}** ({row['class_name'][:3]})\n\n{row['action']} (+{row['points']})")
+                action = row['action']
+                
+                # 大屏彩色日志卡片设计
+                if "答题" in action:
+                    border_color = "#D81B60"
+                    icon = "🔥"
+                elif "VIP" in action:
+                    border_color = "#FBC02D"
+                    icon = "⭐"
+                else:
+                    border_color = "#1E88E5"
+                    icon = "🧑‍🎓"
+                    
+                html_log = f"""
+                <div style='margin-bottom: 10px; padding: 10px; border-radius: 5px; background-color: #f8f9fa; border-left: 6px solid {border_color}; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);'>
+                    <div style='font-size: 14px; font-weight: bold; color: #333;'>{icon} [{time_only}] {row['student_name']}</div>
+                    <div style='font-size: 14px; color: {border_color}; margin-top: 4px; font-weight: bold;'>{action} (+{row['points']})</div>
+                </div>
+                """
+                st.markdown(html_log, unsafe_allow_html=True)
         else:
             st.write("坐等第一位发言的同学...")
 
@@ -215,18 +233,15 @@ elif view_mode == "admin":
             use_container_width=True
         )
         
-        st.warning("⚠️ 导出数据后，请清空数据，迎接下一节课的其他班级。")
+        st.warning("⚠️ 导出数据后，请清空数据，迎接下一节课。")
         if st.button("🗑️ 清空所有座位和日志 (无法恢复)", type="primary"):
             clear_all_data()
             st.success("数据已清空，大屏幕已重置为全新状态！")
             st.rerun()
 
 else:
-    # ------------------ 学生端（强制Cookie记忆） ------------------
+    # ------------------ 学生端（回归极简登录） ------------------
     st.title("🚀 课堂签到与加分系统")
-    
-    # 初始化 Cookie 控制器
-    controller = CookieController()
     
     if not is_open:
         st.error("🛑 老师已关闭目前的签到/加分通道。")
@@ -235,19 +250,8 @@ else:
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
 
-    # 第一优先级：尝试从底层 Cookie 读取记忆
-    saved_id = controller.get('stu_id')
-    saved_name = controller.get('stu_name')
-    saved_class = controller.get('class_name')
-    
-    if saved_id and saved_name and not st.session_state.logged_in:
-        st.session_state.class_name = saved_class
-        st.session_state.stu_id = saved_id
-        st.session_state.stu_name = saved_name
-        st.session_state.logged_in = True
-
     if not st.session_state.logged_in:
-        with st.form("login_form", clear_on_submit=False):
+        with st.form("login_form"):
             st.write("### 身份认证")
             class_name = st.selectbox("学科与班级", CLASSES)
             stu_id = st.text_input("学号")
@@ -261,18 +265,13 @@ else:
                 elif not stu_id or not stu_name:
                     st.error("❌ 请填写完整的学号和姓名。")
                 else:
-                    # 验证通过，强制写入 Cookie
-                    controller.set('stu_id', stu_id)
-                    controller.set('stu_name', stu_name)
-                    controller.set('class_name', class_name)
-                    
                     st.session_state.class_name = class_name
                     st.session_state.stu_id = stu_id
                     st.session_state.stu_name = stu_name
                     st.session_state.logged_in = True
                     st.rerun()
     else:
-        st.success(f"你好，{st.session_state.stu_name} ({st.session_state.class_name}) - 身份已自动保存")
+        st.success(f"你好，{st.session_state.stu_name}")
         tab1, tab2 = st.tabs(["🪑 抢占座位", "🙋 答题加分"])
         
         with tab1:
@@ -327,11 +326,12 @@ else:
             time_only = row['timestamp'].split(" ")[1]
             action = row['action']
             
+            # 去掉了班级后缀，保留姓名和彩色行为
             if "答题" in action:
-                display_text = f"🔥 <span style='color: #D81B60; font-weight: bold;'>[{row['class_name'][:3]}] {row['student_name']} {action} (+{row['points']})</span>"
+                display_text = f"🔥 <span style='color: #D81B60; font-weight: bold;'>{row['student_name']} {action} (+{row['points']})</span>"
             elif "VIP" in action:
-                display_text = f"⭐ <span style='color: #FDD835; font-weight: bold;'>[{row['class_name'][:3]}] {row['student_name']} {action} (+{row['points']})</span>"
+                display_text = f"⭐ <span style='color: #FBC02D; font-weight: bold;'>{row['student_name']} {action} (+{row['points']})</span>"
             else:
-                display_text = f"🧑‍🎓 <span style='color: #1E88E5;'>[{row['class_name'][:3]}] {row['student_name']} {action} (+{row['points']})</span>"
+                display_text = f"🧑‍🎓 <span style='color: #1E88E5;'>{row['student_name']} {action} (+{row['points']})</span>"
                 
             st.markdown(f"[{time_only}] {display_text}", unsafe_allow_html=True)
