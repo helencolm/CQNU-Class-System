@@ -12,7 +12,7 @@ DB_FILE = 'classroom_v2.db'
 ROWS = 9     
 COLS = 10    
 VIP_ROWS = 3 
-TEACHER_PWD = "admin" 
+TEACHER_PWD = "hfyadmin" 
 CLASSES = ["25历史学1班", "25历史学2班", "25音乐学2班", "其他"]
 
 BJ_TZ = datetime.timezone(datetime.timedelta(hours=8))
@@ -409,4 +409,5 @@ else:
                 display_text = f"🧑‍🎓 <span style='color: #1E88E5;'>{row['student_name']} {action} (+{row['points']})</span>"
                 
             st.markdown(f"[{time_only}] {display_text}", unsafe_allow_html=True)
+
 
