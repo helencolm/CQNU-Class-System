@@ -166,7 +166,7 @@ if view_mode == "screen":
 
     with col_side:
         # ---- 上半部分：排行榜单 ----
-        st.header("🏆 实时排名")
+        st.header("🏆 排行榜单")
         conn = sqlite3.connect(DB_FILE)
         # 计算每个人的总分进行排名
         leaderboard_df = pd.read_sql_query("""
@@ -409,6 +409,7 @@ else:
                 display_text = f"🧑‍🎓 <span style='color: #1E88E5;'>{row['student_name']} {action} (+{row['points']})</span>"
                 
             st.markdown(f"[{time_only}] {display_text}", unsafe_allow_html=True)
+
 
 
 
