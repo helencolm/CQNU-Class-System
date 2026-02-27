@@ -109,7 +109,7 @@ if view_mode == "screen":
     col_main, col_side = st.columns([3, 1.2]) # 稍微加宽一点右侧，给榜单留空间
     
     with col_main:
-        st.markdown("<h1 style='text-align: center;'>🎯 课堂座位实时热力图</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>🎯 《学生心理与教育》课堂座位实时热力图</h1>", unsafe_allow_html=True)
         if is_open:
             st.markdown(f"<h3 style='text-align: center; color: #D32F2F;'>今日签到口令：【 {current_pin} 】</h3>", unsafe_allow_html=True)
         else:
@@ -181,13 +181,13 @@ if view_mode == "screen":
             for i, row in leaderboard_df.iterrows():
                 rank = i + 1
                 if rank == 1:
-                    title = "👑 榜一大哥"
+                    title = "👑 榜一"
                     color = "#D32F2F"
                 elif rank == 2:
-                    title = "🥈 榜二护法"
+                    title = "🥈 榜二"
                     color = "#E64A19"
                 elif rank == 3:
-                    title = "🥉 榜三先锋"
+                    title = "🥉 榜三"
                     color = "#F57C00"
                 else:
                     title = f"🏅 第 {rank} 名"
@@ -286,10 +286,10 @@ elif view_mode == "admin":
 
 else:
     # ------------------ 学生端 ------------------
-    st.title("🚀 课堂签到与加分系统")
+    st.title("🚀 《学生心理与教育》课堂签到与加分系统")
     
     if not is_open:
-        st.error("🛑 老师已关闭目前的签到/加分通道。")
+        st.error("🛑 老师已关闭签到/加分通道。")
         st.stop()
         
     if 'logged_in' not in st.session_state:
@@ -318,8 +318,8 @@ else:
     else:
         st.success(f"你好，{st.session_state.stu_name}")
         
-        # 新增了第三个 Tab：榜一大哥
-        tab1, tab2, tab3 = st.tabs(["🪑 抢占座位", "🙋 答题加分", "🏆 榜一大哥"])
+        # 新增了第三个 Tab：排行榜
+        tab1, tab2, tab3 = st.tabs(["🪑 抢占座位", "🙋 答题加分", "🏆 排行榜单"])
         
         with tab1:
             conn = sqlite3.connect(DB_FILE)
@@ -409,3 +409,4 @@ else:
                 display_text = f"🧑‍🎓 <span style='color: #1E88E5;'>{row['student_name']} {action} (+{row['points']})</span>"
                 
             st.markdown(f"[{time_only}] {display_text}", unsafe_allow_html=True)
+
