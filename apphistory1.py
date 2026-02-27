@@ -95,7 +95,7 @@ def add_bonus_points(stu_id, stu_name, class_name):
 # ==========================================
 # 3. 界面渲染路由
 # ==========================================
-st.set_page_config(layout="wide", page_title="课堂互动空间")
+st.set_page_config(layout="wide", page_title="课堂签到加分系统")
 query_params = st.query_params
 view_mode = query_params.get("view", "student")
 
@@ -361,7 +361,7 @@ else:
                 st.success("✅ 加分成功！速去【排行榜】页面查看你的排名。")
                 
         with tab3:
-            st.subheader("🔥 谁是今天的榜一？")
+            st.subheader("🔥 实时排名")
             st_autorefresh(interval=5000, limit=None, key="leaderboard_refresh")
             
             conn = sqlite3.connect(DB_FILE)
@@ -409,5 +409,6 @@ else:
                 display_text = f"🧑‍🎓 <span style='color: #1E88E5;'>{row['student_name']} {action} (+{row['points']})</span>"
                 
             st.markdown(f"[{time_only}] {display_text}", unsafe_allow_html=True)
+
 
 
