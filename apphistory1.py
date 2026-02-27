@@ -165,8 +165,8 @@ if view_mode == "screen":
                 cols_layout[ui_col_index].markdown(html, unsafe_allow_html=True)
 
     with col_side:
-        # ---- 上半部分：封神榜 ----
-        st.header("🏆 课堂封神榜")
+        # ---- 上半部分：排行榜单 ----
+        st.header("🏆 实时排名")
         conn = sqlite3.connect(DB_FILE)
         # 计算每个人的总分进行排名
         leaderboard_df = pd.read_sql_query("""
@@ -358,7 +358,7 @@ else:
             st.markdown("回答问题后，点击下方按钮自助加分，座位会立刻变色升温！")
             if st.button("🙋 我刚回答了问题，加 2 分！", use_container_width=True):
                 add_bonus_points(st.session_state.stu_id, st.session_state.stu_name, st.session_state.class_name)
-                st.success("✅ 加分成功！速去【排行榜】页面查看你的排名。")
+                st.success("✅ 加分成功！速去【排行榜单】页面查看你的排名。")
                 
         with tab3:
             st.subheader("🔥 实时排名")
@@ -409,6 +409,7 @@ else:
                 display_text = f"🧑‍🎓 <span style='color: #1E88E5;'>{row['student_name']} {action} (+{row['points']})</span>"
                 
             st.markdown(f"[{time_only}] {display_text}", unsafe_allow_html=True)
+
 
 
 
