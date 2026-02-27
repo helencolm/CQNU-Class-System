@@ -8,17 +8,17 @@ from streamlit_autorefresh import st_autorefresh
 # ==========================================
 # 1. 核心配置与数据库初始化
 # ==========================================
-DB_FILE = 'classroom.db'
-ROWS = 9     # 教室总排数：9排
-COLS = 10    # 每排座位数：10座
-VIP_ROWS = 3 # 前 3 排算 VIP 加 2 分
-TEACHER_PWD = "admin" # ⚠️ 教师后台密码
+# 【修复1】更换数据库名称，抛弃旧的冲突数据，建立全新 6 列数据库
+DB_FILE = 'classroom_v2.db' 
+ROWS = 9     
+COLS = 10    
+VIP_ROWS = 3 
+TEACHER_PWD = "admin" 
 CLASSES = ["25历史学1班", "25历史学2班", "25音乐学2班", "其他"]
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    # 加入了 class_name 字段，方便科研数据统计
     c.execute('''CREATE TABLE IF NOT EXISTS seats
                  (row INTEGER, col INTEGER, student_id TEXT, student_name TEXT, class_name TEXT, timestamp TEXT, PRIMARY KEY(row, col))''')
     c.execute('''CREATE TABLE IF NOT EXISTS logs
@@ -102,44 +102,60 @@ current_pin = get_setting('current_pin')
 is_open = get_setting('class_open') == 'True'
 
 if view_mode == "screen":
-    # ------------------ 大屏端（完美还原 2-6-2 布局） ------------------
+    # ------------------ 大屏端（完美还原 2-6-2 布局 + 互动区） ------------------
     st_autorefresh(interval=3000, limit=None, key="screen_refresh")
     
-    st.markdown("<h1 style='text-align: center;'>🎯 课堂座位实时看板</h1>", unsafe_allow_html=True)
-    if is_open:
-        st.markdown(f"<h3 style='text-align: center; color: #D32F2F;'>今日签到口令：【 {current_pin} 】</h3>", unsafe_allow_html=True)
-    else:
-        st.markdown("<h3 style='text-align: center; color: gray;'>🚫 签到通道已关闭</h3>", unsafe_allow_html=True)
-    st.markdown("---")
+    # 【修复2】恢复大屏幕的左右 3:1 分栏结构
+    col_main, col_side = st.columns([3, 1])
     
-    conn = sqlite3.connect(DB_FILE)
-    seats_df = pd.read_sql_query("SELECT * FROM seats", conn)
-    conn.close()
-    taken_seats = {(row['row'], row['col']): row['student_name'] for _, row in seats_df.iterrows()}
-    
-    # 渲染 2-6-2 布局
-    for r in range(1, ROWS + 1):
-        # 巧妙利用列宽比例切割出两条过道（索引2和9是过道）
-        cols_layout = st.columns([1, 1, 0.4, 1, 1, 1, 1, 1, 1, 0.4, 1, 1])
-        seat_col_indices = [0, 1, 3, 4, 5, 6, 7, 8, 10, 11] # 座位对应的 UI 列索引
+    with col_main:
+        st.markdown("<h1 style='text-align: center;'>🎯 课堂座位实时看板</h1>", unsafe_allow_html=True)
+        if is_open:
+            st.markdown(f"<h3 style='text-align: center; color: #D32F2F;'>今日签到口令：【 {current_pin} 】</h3>", unsafe_allow_html=True)
+        else:
+            st.markdown("<h3 style='text-align: center; color: gray;'>🚫 签到通道已关闭</h3>", unsafe_allow_html=True)
+        st.markdown("---")
         
-        for c in range(1, COLS + 1):
-            ui_col_index = seat_col_indices[c-1]
-            seat_status = taken_seats.get((r, c), "空座")
+        conn = sqlite3.connect(DB_FILE)
+        seats_df = pd.read_sql_query("SELECT * FROM seats", conn)
+        conn.close()
+        taken_seats = {(row['row'], row['col']): row['student_name'] for _, row in seats_df.iterrows()}
+        
+        # 渲染 2-6-2 布局
+        for r in range(1, ROWS + 1):
+            cols_layout = st.columns([1, 1, 0.4, 1, 1, 1, 1, 1, 1, 0.4, 1, 1])
+            seat_col_indices = [0, 1, 3, 4, 5, 6, 7, 8, 10, 11]
             
-            if seat_status != "空座":
-                bg_color = "#1E88E5" if r > VIP_ROWS else "#4CAF50" # 已占：普通区偏蓝，VIP区偏绿
-                text = f"🧑‍🎓 {seat_status}"
-            elif r <= VIP_ROWS:
-                bg_color = "#FDD835" # VIP区：金色
-                text = f"⭐ {r}-{c}"
-            else:
-                bg_color = "#E0E0E0" # 普通区：灰色
-                text = f"{r}-{c}"
-            
-            html = f"""<div style="background-color: {bg_color}; padding: 8px 2px; border-radius: 5px; 
-                        text-align: center; margin-bottom: 8px; font-weight: bold; color: #333; font-size: 13px;">{text}</div>"""
-            cols_layout[ui_col_index].markdown(html, unsafe_allow_html=True)
+            for c in range(1, COLS + 1):
+                ui_col_index = seat_col_indices[c-1]
+                seat_status = taken_seats.get((r, c), "空座")
+                
+                if seat_status != "空座":
+                    bg_color = "#1E88E5" if r > VIP_ROWS else "#4CAF50" 
+                    text = f"🧑‍🎓 {seat_status}"
+                elif r <= VIP_ROWS:
+                    bg_color = "#FDD835" 
+                    text = f"⭐ {r}-{c}"
+                else:
+                    bg_color = "#E0E0E0" 
+                    text = f"{r}-{c}"
+                
+                html = f"""<div style="background-color: {bg_color}; padding: 8px 2px; border-radius: 5px; 
+                            text-align: center; margin-bottom: 8px; font-weight: bold; color: #333; font-size: 13px;">{text}</div>"""
+                cols_layout[ui_col_index].markdown(html, unsafe_allow_html=True)
+
+    # 恢复大屏幕右侧的实时加分榜
+    with col_side:
+        st.header("📢 实时加分榜")
+        conn = sqlite3.connect(DB_FILE)
+        logs_df = pd.read_sql_query("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 15", conn)
+        conn.close()
+        if not logs_df.empty:
+            for _, row in logs_df.iterrows():
+                time_only = row['timestamp'].split(" ")[1]
+                st.info(f"[{time_only}] **{row['student_name']}** ({row['class_name'][:3]})\n\n{row['action']} (+{row['points']})")
+        else:
+            st.write("坐等第一位发言的同学...")
 
 elif view_mode == "admin":
     # ------------------ 教师隐藏后台 ------------------
@@ -197,11 +213,12 @@ else:
         st.session_state.logged_in = False
 
     if not st.session_state.logged_in:
-        with st.form("login_form"):
+        # 【优化】开启 clear_on_submit=False 让浏览器更容易记住表单内容
+        with st.form("login_form", clear_on_submit=False):
             st.write("### 身份认证")
             class_name = st.selectbox("学科与班级", CLASSES)
-            stu_id = st.text_input("学号")
-            stu_name = st.text_input("姓名")
+            stu_id = st.text_input("学号 (浏览器会自动记忆)")
+            stu_name = st.text_input("姓名 (浏览器会自动记忆)")
             pin_input = st.text_input("大屏幕【4位口令】")
             submitted = st.form_submit_button("进入系统")
             
@@ -273,10 +290,10 @@ else:
             action = row['action']
             
             if "答题" in action:
-                display_text = f"🔥 <span style='color: #D81B60; font-weight: bold;'>[{row['class_name']}] {row['student_name']} {action} (+{row['points']})</span>"
+                display_text = f"🔥 <span style='color: #D81B60; font-weight: bold;'>[{row['class_name'][:3]}] {row['student_name']} {action} (+{row['points']})</span>"
             elif "VIP" in action:
-                display_text = f"⭐ <span style='color: #FDD835; font-weight: bold;'>[{row['class_name']}] {row['student_name']} {action} (+{row['points']})</span>"
+                display_text = f"⭐ <span style='color: #FDD835; font-weight: bold;'>[{row['class_name'][:3]}] {row['student_name']} {action} (+{row['points']})</span>"
             else:
-                display_text = f"🧑‍🎓 <span style='color: #1E88E5;'>[{row['class_name']}] {row['student_name']} {action} (+{row['points']})</span>"
+                display_text = f"🧑‍🎓 <span style='color: #1E88E5;'>[{row['class_name'][:3]}] {row['student_name']} {action} (+{row['points']})</span>"
                 
             st.markdown(f"[{time_only}] {display_text}", unsafe_allow_html=True)
